@@ -4,7 +4,7 @@
 // Sam Siewert, December 2017
 //
 // This is necessary for CPU affinity macros in Linux
-#define _GNU_SOURCE
+//#define _GNU_SOURCE
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -31,8 +31,7 @@
 #define USEC_PER_MSEC (1000)
 #define NANOSEC_PER_SEC (1000000000)
 #define NUM_CPU_CORES (2)
-#define TRUE (1)
-#define FALSE (0)
+
 
 #define NUM_THREADS (3+1)
 
@@ -40,12 +39,13 @@
 #define ECHO 6
 
 // http://wiringpi.com/pins/
-#define MOTOR_A_IN1 0
-#define MOTOR_A_IN2 2
+#define MOTOR_A_IN1 2
+#define MOTOR_A_IN2 0
 
 #define MOTOR_B_IN1 12
 #define MOTOR_B_IN2 13
 
+#define CHANGE_DIRECTION_COUNT 15
 
 using namespace cv;
 using namespace std;
@@ -55,14 +55,17 @@ using namespace std;
 CvCapture* capture;
 IplImage* frame;
 
+VideoCapture cap; 
+
 int abortTest=FALSE;
 int abortS1=FALSE, abortS2=FALSE, abortS3=FALSE;
 sem_t semS1, semS2, semS3;
 struct timeval start_time_val;
 
 unsigned int motor_direction = 1;
+unsigned int change_direction = 0;
 
-enum directions {FORWARD = 1, REVERSE, RIGHT, LEFT};
+enum directions {STOP = 0, FORWARD, REVERSE, RIGHT, LEFT};
 
 typedef struct
 {
@@ -78,17 +81,21 @@ typedef struct
 } decodedObject;
 
 // Find and decode barcodes and QR codes
-void decode(Mat &im, vector<decodedObject>&decodedObjects)
+ImageScanner scanner;
+Mat imGray;
+
+string payload;
+void decode(Mat &im)
 {
 
   // Create zbar scanner
-  ImageScanner scanner;
+  //ImageScanner scanner;
 
   // Configure scanner
-  scanner.set_config(ZBAR_NONE, ZBAR_CFG_ENABLE, 1);
+  //scanner.set_config(ZBAR_NONE, ZBAR_CFG_ENABLE, 1);
 
   // Convert image to grayscale
-  Mat imGray;
+  //Mat imGray;
   cvtColor(im, imGray,COLOR_BGR2GRAY);
 
   // Wrap image data in a zbar image
@@ -115,14 +122,32 @@ void decode(Mat &im, vector<decodedObject>&decodedObjects)
 
     while(ss >> product >> direction) {
             cout << "Product : " << product << "\t" << "Direction : " << direction << endl;
+            if(product == payload && change_direction == 0) {
+                change_direction = CHANGE_DIRECTION_COUNT;
+                if(direction == "Forward") {
+                    motor_direction = FORWARD;
+                }
+                else if(direction == "Left") {
+                    motor_direction = LEFT;
+                }
+                else if(direction == "Right") {
+                    motor_direction = RIGHT;
+                }
+                else if(direction == "Reverse") {
+                    motor_direction = REVERSE;
+                }
+                break;
+            }
     }
     // Obtain location
+    /*
     for(int i = 0; i< symbol->get_location_size(); i++)
     {
       obj.location.push_back(Point(symbol->get_location_x(i),symbol->get_location_y(i)));
     }
 
     decodedObjects.push_back(obj);
+    */
   }
 }
 
@@ -157,6 +182,15 @@ void display(Mat &im, vector<decodedObject>&decodedObjects)
 
 }
 
+long unsigned int time_stamp(void)
+{
+	struct timespec time_val;
+	long unsigned int val;
+	clock_gettime( CLOCK_REALTIME, &time_val);
+	val = ((long unsigned int)time_val.tv_sec*1000000000)+((long unsigned int)((long unsigned int)time_val.tv_nsec));
+	return val;
+}
+
 
 
 void ultrasonic_setup() {
@@ -175,12 +209,22 @@ void l293d_setup() {
     pinMode(MOTOR_A_IN2, OUTPUT);
 }
 
+int video_setup() {
+    cap.open(0); 
+    // Check if camera opened successfully
+    if(!cap.isOpened()){
+        cout << "Error opening video stream or file" << endl;
+        return -1;
+    }
+    return 0;
+}
+
 void motor_forward() {
     digitalWrite(MOTOR_A_IN1, HIGH);
     digitalWrite(MOTOR_A_IN2, LOW);
     
     digitalWrite(MOTOR_B_IN1, HIGH);
-    digitalWrite(MOTOR_B_IN2, LOW);    
+    digitalWrite(MOTOR_B_IN2, LOW); 
 }
 
 void motor_reverse() {
@@ -207,8 +251,16 @@ void motor_left() {
     digitalWrite(MOTOR_B_IN2, LOW);
 }
 
+void motor_stop() {
+    digitalWrite(MOTOR_A_IN1, LOW);
+    digitalWrite(MOTOR_A_IN2, LOW);
+    
+    digitalWrite(MOTOR_B_IN1, LOW);
+    digitalWrite(MOTOR_B_IN2, LOW);
+}
+
+
 int getCM() {
-        printf("Inside cm mesaure\n");
         //Send trig pulse
         digitalWrite(TRIG, HIGH);
         delayMicroseconds(20);
@@ -239,6 +291,7 @@ void print_scheduler(void);
 
 int main()
 {
+    
     struct timeval current_time_val;
     int i, rc, scope;
     cpu_set_t threadcpu;
@@ -326,7 +379,7 @@ int main()
 
     // Servcie_1 = RT_MAX-1 @ 30 Hz
     //
-    rt_param[1].sched_priority=rt_max_prio-3;
+    rt_param[1].sched_priority=rt_max_prio-1;
     pthread_attr_setschedparam(&rt_sched_attr[1], &rt_param[1]);
     rc=pthread_create(&threads[1],               // pointer to thread descriptor
                       &rt_sched_attr[1],         // use specific attributes
@@ -352,17 +405,17 @@ int main()
         
     // Service_3 = RT_MAX-2 @ 10 Hz
     //
-    rt_param[3].sched_priority=rt_max_prio-1;
+    rt_param[3].sched_priority=rt_max_prio-3;
     pthread_attr_setschedparam(&rt_sched_attr[3], &rt_param[3]);
-    rc=pthread_create(&threads[3], &rt_sched_attr[3], Service_2, (void *)&(threadParams[3]));
+    rc=pthread_create(&threads[3], &rt_sched_attr[3], Service_3, (void *)&(threadParams[3]));
     if(rc < 0)
-        perror("pthread_create for service 2");
+        perror("pthread_create for service 3");
     else
-        printf("pthread_create successful for service 2\n");
+        printf("pthread_create successful for service 3\n");
         
         
     printf("Start sequencer\n");
-    threadParams[0].sequencePeriods=300;//1800;
+    threadParams[0].sequencePeriods=1800;
 
     // Sequencer = RT_MAX   @ 60 Hz
     //
@@ -388,7 +441,7 @@ int main()
 void *Sequencer(void *threadp)
 {
     struct timeval current_time_val;
-    struct timespec delay_time = {0,16666666}; // delay for 16.67 msec, 60 Hz
+    struct timespec delay_time = {0,16666666};//{0, 33333333};  // delay for 16.67 msec, 60 Hz
     struct timespec remaining_time;
     double current_time;
     double residual;
@@ -437,13 +490,13 @@ void *Sequencer(void *threadp)
         // Release each service at a sub-rate of the generic sequencer rate
 
         // Servcie_1 = RT_MAX-1 @ 30 Hz
-        if((seqCnt % 10) == 0) sem_post(&semS1);
+        if((seqCnt % 2) == 0) sem_post(&semS1);
 
         // Service_2 = RT_MAX-2 @ 10 Hz
-        if((seqCnt % 30) == 0) sem_post(&semS2);
+        if((seqCnt % 15) == 0) sem_post(&semS2);
 
         // Service_3 = RT_MAX-3 @ 5 Hz
-        if((seqCnt % 15) == 0) sem_post(&semS3);
+        if((seqCnt % 30) == 0) sem_post(&semS3);
 
         // // Service_4 = RT_MAX-2  @ 10 Hz
         // if((seqCnt % 6) == 0) sem_post(&semS4);
@@ -479,6 +532,10 @@ void *Service_1(void *threadp)
     double current_time;
     unsigned long long S1Cnt=0;
     threadParams_t *threadParams = (threadParams_t *)threadp;
+    
+    long unsigned int start_time, worst_time, stop_time;
+    
+    l293d_setup();
 
     gettimeofday(&current_time_val, (struct timezone *)0);
     syslog(LOG_CRIT, "Frame Sampler thread @ sec=%d, msec=%d\n", (int)(current_time_val.tv_sec-start_time_val.tv_sec), (int)current_time_val.tv_usec/USEC_PER_MSEC);
@@ -487,13 +544,50 @@ void *Service_1(void *threadp)
     while(!abortS1)
     {
         sem_wait(&semS1);
+        start_time = time_stamp();
         S1Cnt++;
-
         gettimeofday(&current_time_val, (struct timezone *)0);
         syslog(LOG_CRIT, "Frame Sampler release %llu @ sec=%d, msec=%d\n", S1Cnt, (int)(current_time_val.tv_sec-start_time_val.tv_sec), (int)current_time_val.tv_usec/USEC_PER_MSEC);
-        printf("Frame Sampler release %llu @ sec=%d, msec=%d\n", S1Cnt, (int)(current_time_val.tv_sec-start_time_val.tv_sec), (int)current_time_val.tv_usec/USEC_PER_MSEC);
+        //printf("Frame Sampler release %llu @ sec=%d, msec=%d\n", S1Cnt, (int)(current_time_val.tv_sec-start_time_val.tv_sec), (int)current_time_val.tv_usec/USEC_PER_MSEC);
+        if(change_direction == CHANGE_DIRECTION_COUNT || change_direction == 0) {
+            switch(motor_direction) {
+                case STOP:
+                        motor_stop();
+                        cout<<"Motor stop" << endl;
+                        break;
+                case FORWARD: 
+                        motor_forward();
+                        cout<<"Motor forward" << endl;
+                        break;
+                case REVERSE: 
+                        motor_reverse();
+                        cout<<"Motor reverse" << endl;
+                        break;
+                case RIGHT: motor_right();
+                        cout<<"Motor right" << endl;
+                        break;
+                case LEFT: 
+                        motor_left();
+                        cout<<"Motor left" << endl;
+                        break;
+                default : break;
+            //printf("Time-stamp ultrasonic sensor release %llu @ sec=%d, msec=%d\n", S2Cnt, (int)(current_time_val.tv_sec-start_time_val.tv_sec), (int)current_time_val.tv_usec/USEC_PER_MSEC);
+            }
+        }
+        
+        if(change_direction) {
+            change_direction--;
+        }
+        
+        stop_time = time_stamp();
+        
+        if((stop_time - start_time) > worst_time)
+        {
+            worst_time = stop_time - start_time;	
+        }    
     }
-
+    printf("The execution period of motor thread:: %lu\n",worst_time);
+    motor_stop();
     pthread_exit((void *)0);
 }
 
@@ -505,6 +599,7 @@ void *Service_2(void *threadp)
     unsigned long long S2Cnt=0;
     int distance = 0;
     threadParams_t *threadParams = (threadParams_t *)threadp;
+    long unsigned int start_time, worst_time, stop_time;
     
     ultrasonic_setup();
     
@@ -516,6 +611,7 @@ void *Service_2(void *threadp)
     while(!abortS2)
     {
         sem_wait(&semS2);
+        start_time = time_stamp();
         distance = getCM();
         
         gettimeofday(&current_time_val, (struct timezone *)0);
@@ -523,11 +619,28 @@ void *Service_2(void *threadp)
         //printf("Time-stamp with Image Analysis release %llu @ sec=%d, msec=%d\n", S2Cnt, (int)(current_time_val.tv_sec-start_time_val.tv_sec), (int)current_time_val.tv_usec/USEC_PER_MSEC);
         syslog(LOG_CRIT, "Time-stamp ultrasonic sensor release %llu @ sec=%d, msec=%d\n", S2Cnt, (int)(current_time_val.tv_sec-start_time_val.tv_sec), (int)current_time_val.tv_usec/USEC_PER_MSEC);
         printf("Distance = %d\n", distance);
+        
+        if(distance < 10) {
+            motor_direction = STOP;
+        }
+        else {
+            motor_direction = FORWARD;
+        }
         //printf("Time-stamp ultrasonic sensor release %llu @ sec=%d, msec=%d\n", S2Cnt, (int)(current_time_val.tv_sec-start_time_val.tv_sec), (int)current_time_val.tv_usec/USEC_PER_MSEC);
+    
+        stop_time = time_stamp();
+        
+        if((stop_time - start_time) > worst_time)
+        {
+            worst_time = stop_time - start_time;	
+        }  
     }
+    printf("The execution period of ultrasonic thread:: %lu\n",worst_time);
 
     pthread_exit((void *)0);
 }
+
+
 
 void *Service_3(void *threadp)
 {
@@ -535,58 +648,51 @@ void *Service_3(void *threadp)
     double current_time;
     unsigned long long S3Cnt=0;
     threadParams_t *threadParams = (threadParams_t *)threadp;
+    long unsigned int start_time, worst_time, stop_time;
+    
     int dev=0;
+        
+    video_setup();
     
-    l293d_setup();
+    payload = "Laptop";
     
+    //VideoCapture cap(0);
+    
+    scanner.set_config(ZBAR_NONE, ZBAR_CFG_ENABLE, 1);
 
     gettimeofday(&current_time_val, (struct timezone *)0);
-    syslog(LOG_CRIT, "Motor thread @ sec=%d, msec=%d\n", (int)(current_time_val.tv_sec-start_time_val.tv_sec), (int)current_time_val.tv_usec/USEC_PER_MSEC);
-    printf("Motor thread thread @ sec=%d, msec=%d\n", (int)(current_time_val.tv_sec-start_time_val.tv_sec), (int)current_time_val.tv_usec/USEC_PER_MSEC);
+    syslog(LOG_CRIT, "Camera thread @ sec=%d, msec=%d\n", (int)(current_time_val.tv_sec-start_time_val.tv_sec), (int)current_time_val.tv_usec/USEC_PER_MSEC);
+    printf("Camera thread thread @ sec=%d, msec=%d\n", (int)(current_time_val.tv_sec-start_time_val.tv_sec), (int)current_time_val.tv_usec/USEC_PER_MSEC);
 
     while(!abortS3)
     {
         sem_wait(&semS3);
-        
-        
+        start_time = time_stamp();
         gettimeofday(&current_time_val, (struct timezone *)0);
         syslog(LOG_CRIT, "Time-stamp motor service %llu @ sec=%d, msec=%d\n", S3Cnt, (int)(current_time_val.tv_sec-start_time_val.tv_sec), (int)current_time_val.tv_usec/USEC_PER_MSEC);
-        switch(motor_direction) {
-            case 1: motor_forward();
-                    break;
-            case 2: motor_reverse();
-                    break;
-            case 3: motor_right();
-                    break;
-            case 4: motor_left();
-                    break;
-            default : break;
-        //printf("Time-stamp ultrasonic sensor release %llu @ sec=%d, msec=%d\n", S2Cnt, (int)(current_time_val.tv_sec-start_time_val.tv_sec), (int)current_time_val.tv_usec/USEC_PER_MSEC);
+        S3Cnt++;
+        printf("Camera thread count = %lld\n", S3Cnt);
+        
+        Mat frame;
+        cap >> frame;
+        
+        if(frame.empty())  {
+            break;
         }
-
-        capture = (CvCapture *)cvCreateCameraCapture(dev);
-
-        frame = cvQueryFrame(capture);
-
-        Mat save_frame = cv::cvarrToMat(frame);
-
-        imwrite("dummy1.jpg", save_frame);
-
-        cvReleaseCapture(&capture);
-
-        // Read image
-        Mat im = imread("dummy1.jpg");
-
-        // Variable for decoded objects
-        vector<decodedObject> decodedObjects;
-
-        // Find and decode barcodes and QR codes
-        decode(im, decodedObjects);
-
-        // Display location
-        // display(im, decodedObjects);
+        
+        decode(frame);
+        
+        stop_time = time_stamp();
+        
+        if((stop_time - start_time) > worst_time)
+        {
+            worst_time = stop_time - start_time;	
+        }  
     }
-
+    
+    // When everything done, release the video capture object
+    cap.release();
+    printf("The execution period of camera thread:: %lu\n",worst_time);
     pthread_exit((void *)0);
 }
 
