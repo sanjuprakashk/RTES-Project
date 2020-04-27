@@ -33,8 +33,8 @@
 #define NUM_CPU_CORES (2)
 
 
-#define NUM_THREADS (3+1)
-
+#define NUM_THREADS (3 + 1)
+#define SEQUENCER_COUNT 600
 #define TRIG 5
 #define ECHO 6
 
@@ -188,6 +188,7 @@ long unsigned int time_stamp(void)
 	long unsigned int val;
 	clock_gettime( CLOCK_REALTIME, &time_val);
 	val = ((long unsigned int)time_val.tv_sec*1000000000)+((long unsigned int)((long unsigned int)time_val.tv_nsec));
+		
 	return val;
 }
 
@@ -381,6 +382,7 @@ int main()
     //
     rt_param[1].sched_priority=rt_max_prio-1;
     pthread_attr_setschedparam(&rt_sched_attr[1], &rt_param[1]);
+
     rc=pthread_create(&threads[1],               // pointer to thread descriptor
                       &rt_sched_attr[1],         // use specific attributes
                       //(void *)0,               // default attributes
@@ -392,7 +394,7 @@ int main()
     else
         printf("pthread_create successful for service 1\n");
 
-
+ 
     // Service_2 = RT_MAX-2 @ 10 Hz
     //
     rt_param[2].sched_priority=rt_max_prio-2;
@@ -413,11 +415,12 @@ int main()
     else
         printf("pthread_create successful for service 3\n");
         
-        
-    printf("Start sequencer\n");
-    threadParams[0].sequencePeriods=1800;
 
-    // Sequencer = RT_MAX   @ 60 Hz
+    printf("Start sequencer\n");
+    threadParams[0].sequencePeriods= SEQUENCER_COUNT;
+    sem_post(&semS3);
+    sleep(5); // Wait for camera init
+    // Sequencer = RT_MAX   @ 100 Hz
     //
     rt_param[0].sched_priority=rt_max_prio;
     pthread_attr_setschedparam(&rt_sched_attr[0], &rt_param[0]);
@@ -428,9 +431,10 @@ int main()
         printf("pthread_create successful for sequeencer service 0\n");
 
 
-   for(i=0;i<NUM_THREADS;i++)
+   for(i=0;i<NUM_THREADS;i++) {
+       printf("Joining thread %d\n", i+1);
        pthread_join(threads[i], NULL);
-
+   }
    printf("\nTEST COMPLETE\n");
    
    
@@ -441,7 +445,8 @@ int main()
 void *Sequencer(void *threadp)
 {
     struct timeval current_time_val;
-    struct timespec delay_time = {0,16666666};//{0, 33333333};  // delay for 16.67 msec, 60 Hz
+    struct timespec delay_time = {0, 11111111}; // 100 Hz
+    //{0,1666666};//{0, 33333333};  // delay for 16.67 msec, 60 Hz
     struct timespec remaining_time;
     double current_time;
     double residual;
@@ -489,14 +494,14 @@ void *Sequencer(void *threadp)
 
         // Release each service at a sub-rate of the generic sequencer rate
 
-        // Servcie_1 = RT_MAX-1 @ 30 Hz
+        // Servcie_1 = RT_MAX-1 @ 50 Hz
         if((seqCnt % 2) == 0) sem_post(&semS1);
 
-        // Service_2 = RT_MAX-2 @ 10 Hz
-        if((seqCnt % 15) == 0) sem_post(&semS2);
+        // Service_2 = RT_MAX-2 @ 20 Hz
+        if((seqCnt % 5) == 0) sem_post(&semS2);
 
         // Service_3 = RT_MAX-3 @ 5 Hz
-        if((seqCnt % 30) == 0) sem_post(&semS3);
+        if((seqCnt % 20) == 0) sem_post(&semS3);
 
         // // Service_4 = RT_MAX-2  @ 10 Hz
         // if((seqCnt % 6) == 0) sem_post(&semS4);
@@ -533,21 +538,21 @@ void *Service_1(void *threadp)
     unsigned long long S1Cnt=0;
     threadParams_t *threadParams = (threadParams_t *)threadp;
     
-    long unsigned int start_time, worst_time, stop_time;
+    double start_time, worst_time, stop_time, avg_time = 0;
     
     l293d_setup();
 
     gettimeofday(&current_time_val, (struct timezone *)0);
     syslog(LOG_CRIT, "Frame Sampler thread @ sec=%d, msec=%d\n", (int)(current_time_val.tv_sec-start_time_val.tv_sec), (int)current_time_val.tv_usec/USEC_PER_MSEC);
-    printf("Frame Sampler thread @ sec=%d, msec=%d\n", (int)(current_time_val.tv_sec-start_time_val.tv_sec), (int)current_time_val.tv_usec/USEC_PER_MSEC);
+    printf("Moto thread started @ sec=%d, msec=%d\n", (int)(current_time_val.tv_sec-start_time_val.tv_sec), (int)current_time_val.tv_usec/USEC_PER_MSEC);
 
     while(!abortS1)
     {
         sem_wait(&semS1);
-        start_time = time_stamp();
+        start_time = getTimeMsec();
         S1Cnt++;
-        gettimeofday(&current_time_val, (struct timezone *)0);
-        syslog(LOG_CRIT, "Frame Sampler release %llu @ sec=%d, msec=%d\n", S1Cnt, (int)(current_time_val.tv_sec-start_time_val.tv_sec), (int)current_time_val.tv_usec/USEC_PER_MSEC);
+        //gettimeofday(&current_time_val, (struct timezone *)0);
+        //syslog(LOG_CRIT, "Frame Sampler release %llu @ sec=%d, msec=%d\n", S1Cnt, (int)(current_time_val.tv_sec-start_time_val.tv_sec), (int)current_time_val.tv_usec/USEC_PER_MSEC);
         //printf("Frame Sampler release %llu @ sec=%d, msec=%d\n", S1Cnt, (int)(current_time_val.tv_sec-start_time_val.tv_sec), (int)current_time_val.tv_usec/USEC_PER_MSEC);
         if(change_direction == CHANGE_DIRECTION_COUNT || change_direction == 0) {
             switch(motor_direction) {
@@ -579,14 +584,15 @@ void *Service_1(void *threadp)
             change_direction--;
         }
         
-        stop_time = time_stamp();
-        
-        if((stop_time - start_time) > worst_time)
+        stop_time = getTimeMsec() - start_time;
+        avg_time += stop_time;
+        if((stop_time) > worst_time)
         {
-            worst_time = stop_time - start_time;	
+            worst_time = stop_time;	
         }    
     }
-    printf("The execution period of motor thread:: %lu\n",worst_time);
+    printf("The WCET of motor thread:: %lf\n",worst_time);
+    //printf("The AVCET of motor thread:: %lf\n", (avg_time/S1Cnt));
     motor_stop();
     pthread_exit((void *)0);
 }
@@ -599,19 +605,19 @@ void *Service_2(void *threadp)
     unsigned long long S2Cnt=0;
     int distance = 0;
     threadParams_t *threadParams = (threadParams_t *)threadp;
-    long unsigned int start_time, worst_time, stop_time;
+    double start_time, worst_time, stop_time, avg_time = 0;
     
     ultrasonic_setup();
     
 
     gettimeofday(&current_time_val, (struct timezone *)0);
     syslog(LOG_CRIT, "Time-stamp with Image Analysis thread @ sec=%d, msec=%d\n", (int)(current_time_val.tv_sec-start_time_val.tv_sec), (int)current_time_val.tv_usec/USEC_PER_MSEC);
-    printf("Time-stamp with Image Analysis thread @ sec=%d, msec=%d\n", (int)(current_time_val.tv_sec-start_time_val.tv_sec), (int)current_time_val.tv_usec/USEC_PER_MSEC);
-
+    printf("Ultrasonic thread started @ sec=%d, msec=%d\n", (int)(current_time_val.tv_sec-start_time_val.tv_sec), (int)current_time_val.tv_usec/USEC_PER_MSEC);
+    
     while(!abortS2)
     {
         sem_wait(&semS2);
-        start_time = time_stamp();
+        start_time = getTimeMsec();
         distance = getCM();
         
         gettimeofday(&current_time_val, (struct timezone *)0);
@@ -628,14 +634,16 @@ void *Service_2(void *threadp)
         }
         //printf("Time-stamp ultrasonic sensor release %llu @ sec=%d, msec=%d\n", S2Cnt, (int)(current_time_val.tv_sec-start_time_val.tv_sec), (int)current_time_val.tv_usec/USEC_PER_MSEC);
     
-        stop_time = time_stamp();
+        stop_time = getTimeMsec() - start_time;
+        avg_time += stop_time;
         
-        if((stop_time - start_time) > worst_time)
+        if((stop_time) > worst_time)
         {
-            worst_time = stop_time - start_time;	
+            worst_time = stop_time;	
         }  
     }
-    printf("The execution period of ultrasonic thread:: %lu\n",worst_time);
+    printf("The WCET of ultrasonic thread:: %lf\n",worst_time);
+    //printf("The AVCET of ultrasonic thread:: %lf\n", (avg_time/S2Cnt));
 
     pthread_exit((void *)0);
 }
@@ -648,7 +656,7 @@ void *Service_3(void *threadp)
     double current_time;
     unsigned long long S3Cnt=0;
     threadParams_t *threadParams = (threadParams_t *)threadp;
-    long unsigned int start_time, worst_time, stop_time;
+    double start_time, worst_time, stop_time, avg_time = 0;
     
     int dev=0;
         
@@ -662,12 +670,12 @@ void *Service_3(void *threadp)
 
     gettimeofday(&current_time_val, (struct timezone *)0);
     syslog(LOG_CRIT, "Camera thread @ sec=%d, msec=%d\n", (int)(current_time_val.tv_sec-start_time_val.tv_sec), (int)current_time_val.tv_usec/USEC_PER_MSEC);
-    printf("Camera thread thread @ sec=%d, msec=%d\n", (int)(current_time_val.tv_sec-start_time_val.tv_sec), (int)current_time_val.tv_usec/USEC_PER_MSEC);
+    printf("Camera thread started @ sec=%d, msec=%d\n", (int)(current_time_val.tv_sec-start_time_val.tv_sec), (int)current_time_val.tv_usec/USEC_PER_MSEC);
 
     while(!abortS3)
     {
         sem_wait(&semS3);
-        start_time = time_stamp();
+        start_time = getTimeMsec();
         gettimeofday(&current_time_val, (struct timezone *)0);
         syslog(LOG_CRIT, "Time-stamp motor service %llu @ sec=%d, msec=%d\n", S3Cnt, (int)(current_time_val.tv_sec-start_time_val.tv_sec), (int)current_time_val.tv_usec/USEC_PER_MSEC);
         S3Cnt++;
@@ -682,17 +690,23 @@ void *Service_3(void *threadp)
         
         decode(frame);
         
-        stop_time = time_stamp();
+        stop_time = getTimeMsec() - start_time;
+        avg_time += stop_time;
         
-        if((stop_time - start_time) > worst_time)
-        {
-            worst_time = stop_time - start_time;	
+        if(S3Cnt > 1) {
+            if((stop_time) > worst_time)
+            {
+                worst_time = stop_time;	
+            }
         }  
     }
     
+    printf("Releasing video\n");
     // When everything done, release the video capture object
     cap.release();
-    printf("The execution period of camera thread:: %lu\n",worst_time);
+    
+    printf("The WCET of camera thread:: %lf\n",worst_time);
+    //printf("The AVCET of camera thread:: %lf\n", (avg_time/(iteration-10)));
     pthread_exit((void *)0);
 }
 
