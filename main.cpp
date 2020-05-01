@@ -34,7 +34,7 @@
 
 
 #define NUM_THREADS (3 + 1)
-#define SEQUENCER_COUNT 600
+#define SEQUENCER_COUNT 3000
 #define TRIG 5
 #define ECHO 6
 
@@ -45,7 +45,7 @@
 #define MOTOR_B_IN1 12
 #define MOTOR_B_IN2 13
 
-#define CHANGE_DIRECTION_COUNT 15
+#define CHANGE_DIRECTION_COUNT 50
 
 using namespace cv;
 using namespace std;
@@ -208,6 +208,9 @@ void l293d_setup() {
     wiringPiSetup();
     pinMode(MOTOR_A_IN1, OUTPUT);
     pinMode(MOTOR_A_IN2, OUTPUT);
+    
+    pinMode(MOTOR_B_IN1, OUTPUT);
+    pinMode(MOTOR_B_IN2, OUTPUT);
 }
 
 int video_setup() {
@@ -291,7 +294,25 @@ void print_scheduler(void);
 
 
 int main()
-{
+{   
+    l293d_setup();
+    /*while(1)
+    {
+        motor_forward();
+        sleep(5);
+        
+        motor_right();
+        sleep(5);
+        
+        motor_left();
+        sleep(5);
+        
+        motor_reverse();
+        sleep(5);
+        
+        motor_stop();
+        break;
+    }*/
     
     struct timeval current_time_val;
     int i, rc, scope;
@@ -628,8 +649,9 @@ void *Service_2(void *threadp)
         
         if(distance < 10) {
             motor_direction = STOP;
+            change_direction = 0;
         }
-        else {
+        else if(!change_direction) {
             motor_direction = FORWARD;
         }
         //printf("Time-stamp ultrasonic sensor release %llu @ sec=%d, msec=%d\n", S2Cnt, (int)(current_time_val.tv_sec-start_time_val.tv_sec), (int)current_time_val.tv_usec/USEC_PER_MSEC);
