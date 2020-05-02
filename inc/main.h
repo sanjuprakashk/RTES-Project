@@ -1,3 +1,16 @@
+/**
+ * @\file   main.h
+ * @\author Sanju Prakash Kannioth
+ * @\brief  This files contains the declarations required for the sequencer 
+ *          task and main task
+ * @\date   05/02/2020
+ * References : http://mercury.pr.erau.edu/~siewerts/cec450/code/
+ *              http://mercury.pr.erau.edu/~siewerts/cec450/code/sequencer/
+ * Note : Most of the code for the sequencer and the thread spawning have been taken directly 
+ *        from the above references.
+ *
+ */
+
 #ifndef _MAIN_H
 #define _MAIN_H
 
@@ -32,6 +45,7 @@
 
 #define CHANGE_DIRECTION_COUNT 50
 
+/* Macros with the deadlines in milliseconds */
 #define CAMERA_DEADLINE 200
 #define MOTOR_DEADLINE 20
 #define ULTRASONIC_DEADLINE 50
@@ -40,8 +54,8 @@ using namespace cv;
 using namespace std;
 using namespace zbar;
 
+/* Enumeration for the motor directions */
 enum directions {STOP = 0, FORWARD, REVERSE, RIGHT, LEFT};
-
 
 
 typedef struct
@@ -51,12 +65,45 @@ typedef struct
 } threadParams_t;
 
 
-long unsigned int time_stamp(void);
-
+/**
+--------------------------------------------------------------------------------------------
+Sequencer
+--------------------------------------------------------------------------------------------
+*   Callback function for the sequencer task 
+*
+*   @\param         threadp 					
+*
+*   @\return        void
+*
+*/
 void *Sequencer(void *threadp);
 
+
+/**
+--------------------------------------------------------------------------------------------
+getTimeMsec
+--------------------------------------------------------------------------------------------
+*   Function to get the current time in milliseconds
+*
+*   @\param         void 					
+*
+*   @\return        double 		time
+*
+*/
 double getTimeMsec(void);
 
+
+/**
+--------------------------------------------------------------------------------------------
+print_scheduler
+--------------------------------------------------------------------------------------------
+*   Function to print the scheduler in use
+*
+*   @\param         void 					
+*
+*   @\return        void
+*
+*/
 void print_scheduler(void);
 
 #endif

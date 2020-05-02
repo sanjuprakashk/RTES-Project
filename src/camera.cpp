@@ -1,5 +1,17 @@
+/**
+ * @\file   camera.cpp
+ * @\author Sanju Prakash Kannioth
+ * @\brief  This files contains the function definitions QR Code detection
+ *          using a camera
+ * @\date   05/02/2020
+ * References : https://www.learnopencv.com/barcode-and-qr-code-scanner-using-zbar-and-opencv/
+ *              https://www.learnopencv.com/opencv-qr-code-scanner-c-and-python/
+ *
+ */
+
 #include "camera.h"
 #include "main.h"
+
 
 extern unsigned int motor_direction;
 extern unsigned int change_direction;
@@ -10,19 +22,25 @@ extern int abortS1, abortS2, abortS3;
 extern sem_t semS1, semS2, semS3;
 extern struct timeval start_time_val;
 
-CvCapture* capture;
+// Camera image frame object
 IplImage* frame;
 
+// Camera video capture object
 VideoCapture cap; 
 
+// QR Code scanner object
 ImageScanner scanner;
 Mat imGray;
 
+// String that depicts the payload information for the robot
 string payload;
 
+
+
+/* Function to start the video capture */
 int video_setup() {
     cap.open(0); 
-    // Check if camera opened successfully
+    
     if(!cap.isOpened()){
         cout << "Error opening video stream or file" << endl;
         return -1;
@@ -31,7 +49,7 @@ int video_setup() {
 }
 
 
-
+/* Function to scan the image for QR Codes and decode if QR code is present */
 void decode(Mat &im)
 {
 
@@ -40,10 +58,10 @@ void decode(Mat &im)
   // Wrap image data in a zbar image
   Image image(im.cols, im.rows, "Y800", (uchar *)imGray.data, im.cols * im.rows);
   
-  // Scan the image for barcodes and QRCodes
+  // Scan the image for QR Codes
   int n = scanner.scan(image);
 
-  // Print results
+  // Gather the decoded data from the QR Code
   for(Image::SymbolIterator symbol = image.symbol_begin(); symbol != image.symbol_end(); ++symbol)
   {
     decodedObject obj;
@@ -51,16 +69,19 @@ void decode(Mat &im)
     obj.type = symbol->get_type_name();
     obj.data = symbol->get_data();
 
-    // Print type and data
     cout << "Type : " << obj.type << endl;
     cout << "Data : " << obj.data << endl << endl;
 
+    // String stream object to parse the decoded data
     stringstream ss(obj.data);
 
+    // Strings to store the payload and direction data
     string product, direction;
 
     while(ss >> product >> direction) {
-            cout << "Product : " << product << "\t" << "Direction : " << direction << endl;
+            // cout << "Product : " << product << "\t" << "Direction : " << direction << endl;
+            
+            // Set the motor direction according to the payload
             if(product == payload && change_direction == 0) {
                 change_direction = CHANGE_DIRECTION_COUNT;
                 if(direction == "Forward") {
@@ -78,50 +99,10 @@ void decode(Mat &im)
                 break;
             }
     }
-    // Obtain location
-    /*
-    for(int i = 0; i< symbol->get_location_size(); i++)
-    {
-      obj.location.push_back(Point(symbol->get_location_x(i),symbol->get_location_y(i)));
-    }
-
-    decodedObjects.push_back(obj);
-    */
   }
 }
 
-// Display barcode and QR code location
-void display(Mat &im, vector<decodedObject>&decodedObjects)
-{
-  // Loop over all decoded objects
-  for(int i = 0; i < decodedObjects.size(); i++)
-  {
-    vector<Point> points = decodedObjects[i].location;
-    vector<Point> hull;
-
-    // If the points do not form a quad, find convex hull
-    if(points.size() > 4)
-      convexHull(points, hull);
-    else
-      hull = points;
-
-    // Number of points in the convex hull
-    int n = hull.size();
-
-    for(int j = 0; j < n; j++)
-    {
-      line(im, hull[j], hull[ (j+1) % n], Scalar(255,0,0), 3);
-    }
-
-  }
-
-  // Display results
-  imshow("Results", im);
-  waitKey(0);
-
-}
-
-
+/* Thread callback function for the camera task */
 void *Service_3(void *threadp)
 {
     struct timeval current_time_val;
@@ -139,8 +120,6 @@ void *Service_3(void *threadp)
     video_setup();
     
     payload = "Laptop";
-    
-    //VideoCapture cap(0);
     
     scanner.set_config(ZBAR_NONE, ZBAR_CFG_ENABLE, 1);
 
@@ -184,8 +163,8 @@ void *Service_3(void *threadp)
         }  
     }
     
-    printf("Releasing video\n");
-    // When everything done, release the video capture object
+    // printf("Releasing video\n");
+    // Release the video capture object
     cap.release();
     
     printf("The WCET of camera thread:: %lf\n",worst_time);

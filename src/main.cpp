@@ -1,10 +1,14 @@
-/* ========================================================================== */
-/*                                                                            */
-/*   main.cpp                                                               */
-// Sam Siewert, December 2017
-//
-// This is necessary for CPU affinity macros in Linux
-//#define _GNU_SOURCE
+/**
+ * @\file   main.cpp
+ * @\author Sanju Prakash Kannioth
+ * @\brief  This files contains the sequencer task and main task
+ * @\date   05/02/2020
+ * References : http://mercury.pr.erau.edu/~siewerts/cec450/code/
+ *              http://mercury.pr.erau.edu/~siewerts/cec450/code/sequencer/
+ * Note : Most of the code for the sequencer and the thread spawning have been taken directly 
+ *        from the above references.
+ *
+ */
 
 #include "ultrasonic.h"
 #include "motor_control.h"
@@ -17,12 +21,11 @@ sem_t semS1, semS2, semS3;
 
 struct timeval start_time_val;
 
-
+/* Callback function for the sequencer task */
 void *Sequencer(void *threadp)
 {
     struct timeval current_time_val;
     struct timespec delay_time = {0, 11111111}; // 100 Hz
-    //{0,1666666};//{0, 33333333};  // delay for 16.67 msec, 60 Hz
     struct timespec remaining_time;
     double current_time;
     double residual;
@@ -37,8 +40,8 @@ void *Sequencer(void *threadp)
     do
     {
         delay_cnt=0; residual=0.0;
-        //gettimeofday(&current_time_val, (struct timezone *)0);
-        //syslog(LOG_CRIT, "Sequencer thread prior to delay @ sec=%d, msec=%d\n", (int)(current_time_val.tv_sec-start_time_val.tv_sec), (int)current_time_val.tv_usec/USEC_PER_MSEC);
+        gettimeofday(&current_time_val, (struct timezone *)0);
+        syslog(LOG_CRIT, "Sequencer thread prior to delay @ sec=%d, msec=%d\n", (int)(current_time_val.tv_sec-start_time_val.tv_sec), (int)current_time_val.tv_usec/USEC_PER_MSEC);
         do
         {
 
@@ -90,7 +93,7 @@ void *Sequencer(void *threadp)
     pthread_exit((void *)0);
 }
 
-
+/* Function to get the current time in milliseconds */
 double getTimeMsec(void)
 {
   struct timespec event_ts = {0, 0};
@@ -100,6 +103,7 @@ double getTimeMsec(void)
 }
 
 
+/* Function to print the scheduler in use */
 void print_scheduler(void)
 {
    int schedType;

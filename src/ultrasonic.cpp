@@ -1,3 +1,13 @@
+/**
+ * @\file   ultrasonic.cpp
+ * @\author Sorabh Gandhi, Sanju Prakash Kannioth
+ * @\brief  This files contains the function definitions for the ultrasonic sensor
+ * @\date   05/02/2020
+ * References : http://wiringpi.com/pins/
+ *              https://www.piprojects.xyz/ultrasonic-distance-sensor/
+ *              
+ */
+
 #include "ultrasonic.h"
 #include "main.h"
 
@@ -10,36 +20,40 @@ extern int abortS1, abortS2, abortS3;
 extern sem_t semS1, semS2, semS3;
 extern struct timeval start_time_val;
 
+/* Function to setup the ultrasonic sensor */
 void ultrasonic_setup() {
         wiringPiSetup();
         pinMode(TRIG, OUTPUT);
         pinMode(ECHO, INPUT);
  
-        //TRIG pin must start LOW
+        // Trigger pin should start LOW
         digitalWrite(TRIG, LOW);
         delay(30);
 }
 
-int getCM() {
-        //Send trig pulse
-        digitalWrite(TRIG, HIGH);
-        delayMicroseconds(20);
-        digitalWrite(TRIG, LOW);
- 
-        //Wait for echo start
-        while(digitalRead(ECHO) == LOW);
- 
-        //Wait for echo end
-        long startTime = micros();
-        while(digitalRead(ECHO) == HIGH);
-        long travelTime = micros() - startTime;
- 
-        //Get distance in cm
-        int distance = travelTime / 58;
-        printf("Obt dist in func = %d cm\n", distance);
-        return distance;
+/* Function to get the distance in cm */
+int get_dist_in_cm() {
+    int dist;
+    // Start the trigger pulse
+    digitalWrite(TRIG, HIGH);
+    delayMicroseconds(20);
+    // Stop the triiger pulse
+    digitalWrite(TRIG, LOW);
+
+    while(digitalRead(ECHO) == LOW);
+
+    // Block until the echo line receives the signal
+    long startTime = micros();
+    while(digitalRead(ECHO) == HIGH);
+    long travelTime = micros() - startTime;
+
+    // Convert the distance to cm
+    dist = travelTime / 58;
+    // printf("Obt dist in func = %d cm\n", dist);
+    return dist;
 }
 
+/* Thread callback function for the ultrasonic task */
 void *Service_2(void *threadp)
 {
     struct timeval current_time_val;
@@ -64,14 +78,15 @@ void *Service_2(void *threadp)
     {
         sem_wait(&semS2);
         start_time = getTimeMsec();
-        distance = getCM();
+        distance = get_dist_in_cm();
         
         gettimeofday(&current_time_val, (struct timezone *)0);
-        //syslog(LOG_CRIT, "Time-stamp with Image Analysis release %llu @ sec=%d, msec=%d\n", S2Cnt, (int)(current_time_val.tv_sec-start_time_val.tv_sec), (int)current_time_val.tv_usec/USEC_PER_MSEC);
-        //printf("Time-stamp with Image Analysis release %llu @ sec=%d, msec=%d\n", S2Cnt, (int)(current_time_val.tv_sec-start_time_val.tv_sec), (int)current_time_val.tv_usec/USEC_PER_MSEC);
+        //syslog(LOG_CRIT, "Time-stamp with ultrasonic release %llu @ sec=%d, msec=%d\n", S2Cnt, (int)(current_time_val.tv_sec-start_time_val.tv_sec), (int)current_time_val.tv_usec/USEC_PER_MSEC);
+        //printf("Time-stamp with ultrasonic release %llu @ sec=%d, msec=%d\n", S2Cnt, (int)(current_time_val.tv_sec-start_time_val.tv_sec), (int)current_time_val.tv_usec/USEC_PER_MSEC);
         syslog(LOG_CRIT, "Time-stamp ultrasonic sensor release %llu @ sec=%d, msec=%d\n", S2Cnt, (int)(current_time_val.tv_sec-start_time_val.tv_sec), (int)current_time_val.tv_usec/USEC_PER_MSEC);
         printf("Distance = %d\n", distance);
         
+        /* Logic to stop the motor if an obstacle is detected */
         if(distance < 10) {
             motor_direction = STOP;
             change_direction = 0;
@@ -86,11 +101,13 @@ void *Service_2(void *threadp)
         timeElapsed = stop_time;
         avg_time += stop_time;
         
+        /* Logic to calculate the Worst case execution time */
         if((stop_time) > worst_time)
         {
             worst_time = stop_time;	
         }  
         
+        /* Jitter calculation */
         jitterTime = ULTRASONIC_DEADLINE - timeElapsed;
         if(jitterTime < 0) {
             positiveJitter -= jitterTime;
