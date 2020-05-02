@@ -1,4 +1,4 @@
-INCLUDE_DIRS =
+INCLUDE_DIRS = -Iinc/
 LIB_DIRS =
 CC=g++
 
@@ -9,7 +9,9 @@ CPPLIBS= -L/usr/lib -lopencv_core -lopencv_flann -lopencv_video -lrt -lpthread -
 
 HFILES=
 CFILES=
-CPPFILES= main.cpp
+CPPFILES= camera.cpp motor_control.cpp ultrasonic.cpp main.cpp
+
+vpath %.cpp src
 
 SRCS= ${HFILES} ${CFILES}
 CPPOBJS= ${CPPFILES:.cpp=.o}
