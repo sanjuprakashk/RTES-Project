@@ -7,26 +7,21 @@ CFLAGS= -O0 -pg -g --std=c++11 $(INCLUDE_DIRS) $(CDEFS)
 LIBS= -lrt
 CPPLIBS= -L/usr/lib -lopencv_core -lopencv_flann -lopencv_video -lrt -lpthread -lzbar -lwiringPi
 
-HFILES=
-CFILES=
 CPPFILES= camera.cpp motor_control.cpp ultrasonic.cpp main.cpp
 
-vpath %.cpp src
-
-SRCS= ${HFILES} ${CFILES}
 CPPOBJS= ${CPPFILES:.cpp=.o}
 
-all:    main
+vpath %.cpp src/
+
+all:  $(CPPOBJS)
+	$(CC) $(LDFLAGS) $(CFLAGS) $(CPPOBJS) -o main `pkg-config --libs opencv` $(CPPLIBS)
 
 clean:
 	-rm -f *.o *.d
-	-rm -f main
+	-rm -f main *.out
 
 distclean:
 	-rm -f *.o *.d
-
-main: main.o
-	$(CC) $(LDFLAGS) $(CFLAGS) -o $@ $@.o `pkg-config --libs opencv` $(CPPLIBS)
 
 depend:
 

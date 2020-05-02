@@ -4,6 +4,22 @@
 extern unsigned int motor_direction;
 extern unsigned int change_direction;
 
+
+extern int abortTest;
+extern int abortS1, abortS2, abortS3;
+extern sem_t semS1, semS2, semS3;
+extern struct timeval start_time_val;
+
+CvCapture* capture;
+IplImage* frame;
+
+VideoCapture cap; 
+
+ImageScanner scanner;
+Mat imGray;
+
+string payload;
+
 int video_setup() {
     cap.open(0); 
     // Check if camera opened successfully
@@ -114,6 +130,10 @@ void *Service_3(void *threadp)
     threadParams_t *threadParams = (threadParams_t *)threadp;
     double start_time, worst_time, stop_time, avg_time = 0;
     
+    double timeElapsed;
+    double positiveJitter = 0;  
+    double jitterTime = 0;
+    
     int dev=0;
         
     video_setup();
@@ -149,10 +169,17 @@ void *Service_3(void *threadp)
         stop_time = getTimeMsec() - start_time;
         avg_time += stop_time;
         
+        timeElapsed = stop_time;
+        
         if(S3Cnt > 1) {
             if((stop_time) > worst_time)
             {
                 worst_time = stop_time;	
+            }
+            
+            jitterTime = CAMERA_DEADLINE - timeElapsed;
+            if(jitterTime < 0) {
+                positiveJitter -= jitterTime;
             }
         }  
     }
@@ -163,5 +190,6 @@ void *Service_3(void *threadp)
     
     printf("The WCET of camera thread:: %lf\n",worst_time);
     //printf("The AVCET of camera thread:: %lf\n", (avg_time/(iteration-10)));
+    printf("Cmera task jitter time = %lf\n", positiveJitter);
     pthread_exit((void *)0);
 }

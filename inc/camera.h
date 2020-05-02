@@ -1,14 +1,18 @@
-#ifndef CAMERA_H_
-#define CAMERA_H_
+#ifndef _CAMERA_H
+#define _CAMERA_H
 
 #include <opencv2/opencv.hpp>
 #include <zbar.h>
 #include <sstream>
 
-CvCapture* capture;
-IplImage* frame;
+using namespace cv;
+using namespace std;
+using namespace zbar;
 
-VideoCapture cap; 
+extern CvCapture* capture;
+extern IplImage* frame;
+
+extern VideoCapture cap; 
 
 
 typedef struct
@@ -19,17 +23,16 @@ typedef struct
 } decodedObject;
 
 // Find and decode barcodes and QR codes
-ImageScanner scanner;
-Mat imGray;
+extern ImageScanner scanner;
+extern Mat imGray;
 
-string payload;
+extern string payload;
 
 void display(Mat &im, vector<decodedObject>&decodedObjects);
 
 void decode(Mat &im);
 
 int video_setup();
-
 
 void *Service_3(void *threadp);
 #endif

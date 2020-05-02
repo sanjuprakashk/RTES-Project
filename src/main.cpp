@@ -9,9 +9,124 @@
 #include "ultrasonic.h"
 #include "motor_control.h"
 #include "camera.h"
+#include "main.h"
+
+int abortTest;
+int abortS1, abortS2, abortS3;
+sem_t semS1, semS2, semS3;
+
+struct timeval start_time_val;
+
+
+void *Sequencer(void *threadp)
+{
+    struct timeval current_time_val;
+    struct timespec delay_time = {0, 11111111}; // 100 Hz
+    //{0,1666666};//{0, 33333333};  // delay for 16.67 msec, 60 Hz
+    struct timespec remaining_time;
+    double current_time;
+    double residual;
+    int rc, delay_cnt=0;
+    unsigned long long seqCnt=0;
+    threadParams_t *threadParams = (threadParams_t *)threadp;
+
+    gettimeofday(&current_time_val, (struct timezone *)0);
+    syslog(LOG_CRIT, "Sequencer thread @ sec=%d, msec=%d\n", (int)(current_time_val.tv_sec-start_time_val.tv_sec), (int)current_time_val.tv_usec/USEC_PER_MSEC);
+    printf("Sequencer thread @ sec=%d, msec=%d\n", (int)(current_time_val.tv_sec-start_time_val.tv_sec), (int)current_time_val.tv_usec/USEC_PER_MSEC);
+
+    do
+    {
+        delay_cnt=0; residual=0.0;
+        //gettimeofday(&current_time_val, (struct timezone *)0);
+        //syslog(LOG_CRIT, "Sequencer thread prior to delay @ sec=%d, msec=%d\n", (int)(current_time_val.tv_sec-start_time_val.tv_sec), (int)current_time_val.tv_usec/USEC_PER_MSEC);
+        do
+        {
+
+            rc=nanosleep(&delay_time, &remaining_time);
+
+            if(rc == EINTR)
+            { 
+                residual = remaining_time.tv_sec + ((double)remaining_time.tv_nsec / (double)NANOSEC_PER_SEC);
+
+                if(residual > 0.0) printf("residual=%lf, sec=%d, nsec=%d\n", residual, (int)remaining_time.tv_sec, (int)remaining_time.tv_nsec);
+ 
+                delay_cnt++;
+            }
+            else if(rc < 0)
+            {
+                perror("Sequencer nanosleep");
+                //exit(-1);
+            }
+           
+        } while((residual > 0.0) && (delay_cnt < 100));
+
+        seqCnt++;
+        gettimeofday(&current_time_val, (struct timezone *)0);
+        syslog(LOG_CRIT, "Sequencer cycle %llu @ sec=%d, msec=%d\n", seqCnt, (int)(current_time_val.tv_sec-start_time_val.tv_sec), (int)current_time_val.tv_usec/USEC_PER_MSEC);
+
+
+        if(delay_cnt > 1) printf("Sequencer looping delay %d\n", delay_cnt);
+
+
+        // Release each service at a sub-rate of the generic sequencer rate
+
+        // Servcie_1 = RT_MAX-1 @ 50 Hz
+        if((seqCnt % 2) == 0) sem_post(&semS1);
+
+        // Service_2 = RT_MAX-2 @ 20 Hz
+        if((seqCnt % 5) == 0) sem_post(&semS2);
+
+        // Service_3 = RT_MAX-3 @ 5 Hz
+        if((seqCnt % 20) == 0) sem_post(&semS3);
+
+        syslog(LOG_CRIT, "Sequencer release all sub-services @ sec=%d, msec=%d\n", (int)(current_time_val.tv_sec-start_time_val.tv_sec), (int)current_time_val.tv_usec/USEC_PER_MSEC);
+
+    } while(!abortTest && (seqCnt < threadParams->sequencePeriods));
+
+    sem_post(&semS1); sem_post(&semS2); 
+    sem_post(&semS3);
+    abortS1=true; abortS2=true; abortS3=true;
+
+    pthread_exit((void *)0);
+}
+
+
+double getTimeMsec(void)
+{
+  struct timespec event_ts = {0, 0};
+
+  clock_gettime(CLOCK_MONOTONIC, &event_ts);
+  return ((event_ts.tv_sec)*1000.0) + ((event_ts.tv_nsec)/1000000.0);
+}
+
+
+void print_scheduler(void)
+{
+   int schedType;
+
+   schedType = sched_getscheduler(getpid());
+
+   switch(schedType)
+   {
+       case SCHED_FIFO:
+           printf("Pthread Policy is SCHED_FIFO\n");
+           break;
+       case SCHED_OTHER:
+           printf("Pthread Policy is SCHED_OTHER\n"); exit(-1);
+         break;
+       case SCHED_RR:
+           printf("Pthread Policy is SCHED_RR\n"); exit(-1);
+           break;
+       default:
+           printf("Pthread Policy is UNKNOWN\n"); exit(-1);
+   }
+}
 
 int main()
 {   
+    abortTest=false;
+    abortS1=false, abortS2=false, abortS3=false;
+    
     l293d_setup();
     
     
@@ -160,107 +275,4 @@ int main()
 }
 
 
-void *Sequencer(void *threadp)
-{
-    struct timeval current_time_val;
-    struct timespec delay_time = {0, 11111111}; // 100 Hz
-    //{0,1666666};//{0, 33333333};  // delay for 16.67 msec, 60 Hz
-    struct timespec remaining_time;
-    double current_time;
-    double residual;
-    int rc, delay_cnt=0;
-    unsigned long long seqCnt=0;
-    threadParams_t *threadParams = (threadParams_t *)threadp;
-
-    gettimeofday(&current_time_val, (struct timezone *)0);
-    syslog(LOG_CRIT, "Sequencer thread @ sec=%d, msec=%d\n", (int)(current_time_val.tv_sec-start_time_val.tv_sec), (int)current_time_val.tv_usec/USEC_PER_MSEC);
-    printf("Sequencer thread @ sec=%d, msec=%d\n", (int)(current_time_val.tv_sec-start_time_val.tv_sec), (int)current_time_val.tv_usec/USEC_PER_MSEC);
-
-    do
-    {
-        delay_cnt=0; residual=0.0;
-        //gettimeofday(&current_time_val, (struct timezone *)0);
-        //syslog(LOG_CRIT, "Sequencer thread prior to delay @ sec=%d, msec=%d\n", (int)(current_time_val.tv_sec-start_time_val.tv_sec), (int)current_time_val.tv_usec/USEC_PER_MSEC);
-        do
-        {
-
-            rc=nanosleep(&delay_time, &remaining_time);
-
-            if(rc == EINTR)
-            { 
-                residual = remaining_time.tv_sec + ((double)remaining_time.tv_nsec / (double)NANOSEC_PER_SEC);
-
-                if(residual > 0.0) printf("residual=%lf, sec=%d, nsec=%d\n", residual, (int)remaining_time.tv_sec, (int)remaining_time.tv_nsec);
- 
-                delay_cnt++;
-            }
-            else if(rc < 0)
-            {
-                perror("Sequencer nanosleep");
-                exit(-1);
-            }
-           
-        } while((residual > 0.0) && (delay_cnt < 100));
-
-        seqCnt++;
-        gettimeofday(&current_time_val, (struct timezone *)0);
-        syslog(LOG_CRIT, "Sequencer cycle %llu @ sec=%d, msec=%d\n", seqCnt, (int)(current_time_val.tv_sec-start_time_val.tv_sec), (int)current_time_val.tv_usec/USEC_PER_MSEC);
-
-
-        if(delay_cnt > 1) printf("Sequencer looping delay %d\n", delay_cnt);
-
-
-        // Release each service at a sub-rate of the generic sequencer rate
-
-        // Servcie_1 = RT_MAX-1 @ 50 Hz
-        if((seqCnt % 2) == 0) sem_post(&semS1);
-
-        // Service_2 = RT_MAX-2 @ 20 Hz
-        if((seqCnt % 5) == 0) sem_post(&semS2);
-
-        // Service_3 = RT_MAX-3 @ 5 Hz
-        if((seqCnt % 20) == 0) sem_post(&semS3);
-
-        syslog(LOG_CRIT, "Sequencer release all sub-services @ sec=%d, msec=%d\n", (int)(current_time_val.tv_sec-start_time_val.tv_sec), (int)current_time_val.tv_usec/USEC_PER_MSEC);
-
-    } while(!abortTest && (seqCnt < threadParams->sequencePeriods));
-
-    sem_post(&semS1); sem_post(&semS2); 
-    sem_post(&semS3);
-    abortS1=TRUE; abortS2=TRUE; abortS3=TRUE;
-
-    pthread_exit((void *)0);
-}
-
-
-double getTimeMsec(void)
-{
-  struct timespec event_ts = {0, 0};
-
-  clock_gettime(CLOCK_MONOTONIC, &event_ts);
-  return ((event_ts.tv_sec)*1000.0) + ((event_ts.tv_nsec)/1000000.0);
-}
-
-
-void print_scheduler(void)
-{
-   int schedType;
-
-   schedType = sched_getscheduler(getpid());
-
-   switch(schedType)
-   {
-       case SCHED_FIFO:
-           printf("Pthread Policy is SCHED_FIFO\n");
-           break;
-       case SCHED_OTHER:
-           printf("Pthread Policy is SCHED_OTHER\n"); exit(-1);
-         break;
-       case SCHED_RR:
-           printf("Pthread Policy is SCHED_RR\n"); exit(-1);
-           break;
-       default:
-           printf("Pthread Policy is UNKNOWN\n"); exit(-1);
-   }
-}
 

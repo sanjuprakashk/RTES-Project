@@ -5,6 +5,12 @@ unsigned int motor_direction = 1;
 unsigned int change_direction = 0;
 
 
+extern int abortTest;
+extern int abortS1, abortS2, abortS3;
+extern sem_t semS1, semS2, semS3;
+extern struct timeval start_time_val;
+
+
 void l293d_setup() {
     wiringPiSetup();
     pinMode(MOTOR_A_IN1, OUTPUT);
@@ -63,6 +69,10 @@ void *Service_1(void *threadp)
     
     double start_time, worst_time, stop_time, avg_time = 0;
     
+    double timeElapsed;
+    double positiveJitter = 0;  
+    double jitterTime = 0;
+    
     l293d_setup();
 
     gettimeofday(&current_time_val, (struct timezone *)0);
@@ -108,14 +118,22 @@ void *Service_1(void *threadp)
         }
         
         stop_time = getTimeMsec() - start_time;
+        
+        timeElapsed = stop_time;
         avg_time += stop_time;
         if((stop_time) > worst_time)
         {
             worst_time = stop_time;	
-        }    
+        }
+        
+        jitterTime = MOTOR_DEADLINE - timeElapsed;
+        if(jitterTime < 0) {
+            positiveJitter -= jitterTime;
+        }
     }
     printf("The WCET of motor thread:: %lf\n",worst_time);
     //printf("The AVCET of motor thread:: %lf\n", (avg_time/S1Cnt));
+    printf("Cmera task jitter time = %lf\n", positiveJitter);
     motor_stop();
     pthread_exit((void *)0);
 }

@@ -4,6 +4,12 @@
 extern unsigned int motor_direction;
 extern unsigned int change_direction;
 
+
+extern int abortTest;
+extern int abortS1, abortS2, abortS3;
+extern sem_t semS1, semS2, semS3;
+extern struct timeval start_time_val;
+
 void ultrasonic_setup() {
         wiringPiSetup();
         pinMode(TRIG, OUTPUT);
@@ -43,6 +49,10 @@ void *Service_2(void *threadp)
     threadParams_t *threadParams = (threadParams_t *)threadp;
     double start_time, worst_time, stop_time, avg_time = 0;
     
+    double timeElapsed;
+    double positiveJitter = 0;  
+    double jitterTime = 0;
+    
     ultrasonic_setup();
     
 
@@ -72,15 +82,23 @@ void *Service_2(void *threadp)
         //printf("Time-stamp ultrasonic sensor release %llu @ sec=%d, msec=%d\n", S2Cnt, (int)(current_time_val.tv_sec-start_time_val.tv_sec), (int)current_time_val.tv_usec/USEC_PER_MSEC);
     
         stop_time = getTimeMsec() - start_time;
+        
+        timeElapsed = stop_time;
         avg_time += stop_time;
         
         if((stop_time) > worst_time)
         {
             worst_time = stop_time;	
         }  
+        
+        jitterTime = ULTRASONIC_DEADLINE - timeElapsed;
+        if(jitterTime < 0) {
+            positiveJitter -= jitterTime;
+        }
     }
     printf("The WCET of ultrasonic thread:: %lf\n",worst_time);
     //printf("The AVCET of ultrasonic thread:: %lf\n", (avg_time/S2Cnt));
+    printf("Cmera task jitter time = %lf\n", positiveJitter);
 
     pthread_exit((void *)0);
 }

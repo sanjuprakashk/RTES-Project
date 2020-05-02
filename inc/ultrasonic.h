@@ -1,5 +1,5 @@
-#ifndef ULTRASONIC_H_
-#define ULTRASONIC_H_
+#ifndef _ULTRASONIC_H
+#define _ULTRASONIC_H
 
 #include <wiringPi.h>
 

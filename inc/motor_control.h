@@ -1,5 +1,5 @@
-#ifndef MOTOR_CONTROL_H_
-#define MOTOR_CONTROL_H_
+#ifndef _MOTOR_CONTROL_H
+#define _MOTOR_CONTROL_H
 
 #include <wiringPi.h>
 
