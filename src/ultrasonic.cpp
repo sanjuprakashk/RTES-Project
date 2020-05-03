@@ -115,7 +115,9 @@ void *Service_2(void *threadp)
     }
     printf("The WCET of ultrasonic thread:: %lf\n",worst_time);
     //printf("The AVCET of ultrasonic thread:: %lf\n", (avg_time/S2Cnt));
-    printf("Cmera task jitter time = %lf\n", positiveJitter);
-
+    printf("Ultrasonic task jitter time = %lf\n", positiveJitter);
+    syslog(LOG_CRIT, "The WCET of ultrasonic thread:: %lf\n",worst_time);
+    syslog(LOG_CRIT, "Ultrasonic task jitter time = %lf\n", positiveJitter);
+    
     pthread_exit((void *)0);
 }

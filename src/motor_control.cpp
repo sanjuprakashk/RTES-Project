@@ -156,7 +156,10 @@ void *Service_1(void *threadp)
     }
     printf("The WCET of motor thread:: %lf\n",worst_time);
     //printf("The AVCET of motor thread:: %lf\n", (avg_time/S1Cnt));
-    printf("Cmera task jitter time = %lf\n", positiveJitter);
+    printf("Motor task jitter time = %lf\n", positiveJitter);
     motor_stop();
+    
+    syslog(LOG_CRIT, "The WCET of motor thread:: %lf\n",worst_time);
+    syslog(LOG_CRIT, "Motor task jitter time = %lf\n", positiveJitter);
     pthread_exit((void *)0);
 }

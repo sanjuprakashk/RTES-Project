@@ -132,7 +132,7 @@ void *Service_3(void *threadp)
         sem_wait(&semS3);
         start_time = getTimeMsec();
         gettimeofday(&current_time_val, (struct timezone *)0);
-        syslog(LOG_CRIT, "Time-stamp motor service %llu @ sec=%d, msec=%d\n", S3Cnt, (int)(current_time_val.tv_sec-start_time_val.tv_sec), (int)current_time_val.tv_usec/USEC_PER_MSEC);
+        syslog(LOG_CRIT, "Time-stamp camera service %llu @ sec=%d, msec=%d\n", S3Cnt, (int)(current_time_val.tv_sec-start_time_val.tv_sec), (int)current_time_val.tv_usec/USEC_PER_MSEC);
         S3Cnt++;
         printf("Camera thread count = %lld\n", S3Cnt);
         
@@ -140,7 +140,7 @@ void *Service_3(void *threadp)
         cap >> frame;
         
         if(frame.empty())  {
-            break;
+            continue;
         }
         
         decode(frame);
@@ -169,6 +169,9 @@ void *Service_3(void *threadp)
     
     printf("The WCET of camera thread:: %lf\n",worst_time);
     //printf("The AVCET of camera thread:: %lf\n", (avg_time/(iteration-10)));
-    printf("Cmera task jitter time = %lf\n", positiveJitter);
+    printf("Camera task jitter time = %lf\n", positiveJitter);
+    
+    syslog(LOG_CRIT, "The WCET of camera thread:: %lf\n",worst_time);
+    syslog(LOG_CRIT, "Camera task jitter time = %lf\n", positiveJitter);
     pthread_exit((void *)0);
 }
